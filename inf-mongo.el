@@ -45,6 +45,7 @@
 ;;; Code:
 
 (require 'js)
+(require 'dash)
 (require 'comint)
 
 ;;;###autoload
@@ -64,8 +65,27 @@
 
 (add-hook 'inf-mongo-mode-hook 'ansi-color-for-comint-mode-on)
 
+(defun new-mongo-buffer-index ()
+  (let ((mongo-list (remove-if-not #'(lambda (item)
+                                       (string-match "^\*mongo-\d*\*" item))
+                                   (mapcar (function buffer-name)
+                                           (buffer-list)))))
+    (if mongo-list
+        (+ (reduce #'max
+                   (mapcar (function (lambda (thing)
+                                       (string-to-number (replace-regexp-in-string "\*"
+                                                                                   ""
+                                                                                   (first (last (split-string thing "-")))))))
+                           mongo-list))
+           1)
+      1)))
+
+(defun new-mongo-process-name ()
+  (format "mongo-%d"
+          (new-mongo-buffer-index)))
+
 ;;;###autoload
-(defun inf-mongo (cmd &optional dont-switch-p)
+(defun inf-mongo (cmd)
   "Major mode for interacting with an inferior MongoDB shell (mongo) process.
 
 The following commands are available:
@@ -77,17 +97,18 @@ Customisation: Entry to this mode runs the hooks on comint-mode-hook and
 inf-mongo-mode-hook (in that order)."
   (interactive (list (read-from-minibuffer "Run MongoDB shell: "
                                            inf-mongo-command)))
-
-  (if (not (comint-check-proc "*mongo*"))
-      (save-excursion (let ((cmdlist (split-string cmd)))
-        (set-buffer (apply 'make-comint "mongo" (car cmdlist)
-                           nil (cdr cmdlist)))
-        (inf-mongo-mode)
-        (setq inf-mongo-command cmd) 
-        (setq inf-mongo-buffer "*mongo*")
-        (inf-mongo-setup-autocompletion))))
-  (if (not dont-switch-p)
-      (pop-to-buffer "*mongo*")))
+  (setq mongo-process-name (new-mongo-process-name))
+  (save-excursion
+    (let ((cmdlist (split-string cmd)))
+      (set-buffer (apply 'make-comint
+                         mongo-process-name
+                         (car cmdlist)
+                         nil
+                         (cdr cmdlist)))
+      (inf-mongo-mode)
+      (setq inf-mongo-command cmd)
+      (setq inf-mongo-buffer (format "*%s*" mongo-process-name))
+      (inf-mongo-setup-autocompletion))))
 
 ;;;###autoload
 (defun mongo-send-region (start end)
